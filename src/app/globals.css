@@ -136,7 +136,8 @@ body, #root {
 
 @media (min-width: 768px) {
   .page-container {
-    padding-left: 14rem; /* desktop sidebar */
+    padding-left: 14rem;  /* desktop sidebar width */
+    padding-right: 14rem; /* balance right side so mx-auto hits true viewport center */
     padding-bottom: 0;
   }
 }
