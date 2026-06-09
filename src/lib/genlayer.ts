@@ -15,7 +15,7 @@ const ENDPOINT =
   process.env.NEXT_PUBLIC_GENLAYER_ENDPOINT ?? "https://studio.genlayer.com/api";
 
 const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ??
-  "0x826Cf23a6c3b4697461c5ad71C3eA996655793A6") as Address;
+  "0xe9eDe3a023412688f0Ee0F907741d86b3e792845") as Address;
 
 const NETWORK = process.env.NEXT_PUBLIC_NETWORK ?? "studionet";
 

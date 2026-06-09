@@ -137,7 +137,7 @@ Players use an **auto-generated embedded wallet** — no MetaMask, no external w
 ┌─────────▼───────────────────────────────────────────────────┐
 │              GenLayer Blockchain (studionet)                 │
 │                                                             │
-│   Contract: 0x826Cf23a6c3b4697461c5ad71C3eA996655793A6     │
+│   Contract: 0xe9eDe3a023412688f0Ee0F907741d86b3e792845     │
 │                                                             │
 │   ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │   │   puzzles   │  │   players    │  │    sessions      │  │
@@ -164,7 +164,7 @@ Players use an **auto-generated embedded wallet** — no MetaMask, no external w
 ## GenLayer Contract
 
 **File:** `contracts/gensort.py`  
-**Address:** `0x826Cf23a6c3b4697461c5ad71C3eA996655793A6`  
+**Address:** `0xe9eDe3a023412688f0Ee0F907741d86b3e792845`  
 **Network:** studionet  
 
 ### Storage
@@ -349,7 +349,7 @@ Edit `.env.local`:
 
 ```env
 NEXT_PUBLIC_GENLAYER_ENDPOINT=https://studio.genlayer.com/api
-NEXT_PUBLIC_CONTRACT_ADDRESS=0x826Cf23a6c3b4697461c5ad71C3eA996655793A6
+NEXT_PUBLIC_CONTRACT_ADDRESS=0xe9eDe3a023412688f0Ee0F907741d86b3e792845
 NEXT_PUBLIC_NETWORK=studionet
 ```
 
@@ -368,7 +368,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | Variable | Description | Default |
 |---|---|---|
 | `NEXT_PUBLIC_GENLAYER_ENDPOINT` | GenLayer RPC endpoint URL | `https://studio.genlayer.com/api` |
-| `NEXT_PUBLIC_CONTRACT_ADDRESS` | Deployed contract address | `0x826Cf23a6c3b4697461c5ad71C3eA996655793A6` |
+| `NEXT_PUBLIC_CONTRACT_ADDRESS` | Deployed contract address | `0xe9eDe3a023412688f0Ee0F907741d86b3e792845` |
 | `NEXT_PUBLIC_NETWORK` | GenLayer network name | `studionet` |
 
 Supported network values: `studionet`, `testnetAsimov`, `testnetBradbury`, `localnet`.

@@ -338,6 +338,25 @@ class GenSort(gl.Contract):
         clean_username = username.strip()
         if clean_username == "":
             clean_username = "Anonymous"
+        else:
+            # Feature 5: LLM-moderated username via GenLayer consensus.
+            # Validators independently ask the LLM whether the name is acceptable;
+            # only "OK" with equivalent responses passes consensus.
+            def _moderate() -> str:
+                task = (
+                    "You are moderating a username for a public game leaderboard. "
+                    "Username: \"" + clean_username + "\". "
+                    "Reply with exactly one word: OK if it is non-offensive, non-impersonating, "
+                    "and contains no slurs/hate/sexual content. Otherwise reply REJECT."
+                )
+                return gl.nondet.exec_prompt(task).strip().upper()
+
+            verdict = gl.eq_principle.prompt_comparative(
+                _moderate,
+                "Both responses must agree on whether the username is OK or REJECT.",
+            )
+            if "REJECT" in verdict:
+                raise Exception("Username rejected by moderation consensus")
 
         player = self._get_player(address)
 
@@ -761,6 +780,156 @@ class GenSort(gl.Contract):
             limit = 0
 
         return entries[:limit]
+
+    # ─────────────────────────────────────────────────────────────────────
+    # GenLayer non-deterministic features (LLM + web)
+    # ─────────────────────────────────────────────────────────────────────
+
+    @gl.public.write
+    def generate_puzzle(
+        self,
+        puzzle_id: str,
+        difficulty: str,
+        theme: str = "",
+        num_colours: int = 3,
+    ) -> dict:
+        """
+        Feature 1 + 2: LLM-generated puzzle with on-chain solvability/difficulty
+        check, both validated via GenLayer equivalence-principle consensus.
+        """
+        if puzzle_id == "":
+            raise Exception("Puzzle id cannot be empty")
+        if self.puzzles.get(puzzle_id, "") != "":
+            raise Exception("Puzzle id already exists")
+
+        difficulty_clean = difficulty.strip().lower() or "easy"
+        theme_clean = theme.strip() or "classic"
+        nc = max(2, min(int(num_colours), 6))
+
+        prompt = (
+            "You generate water-sort puzzles. Bottle height is " + str(BOTTLE_HEIGHT) + ". "
+            "Produce a JSON object with keys: layout (list of bottles, each bottle is a "
+            "list of colour strings from bottom to top, max " + str(BOTTLE_HEIGHT) + " items; "
+            "include 2 empty bottles), solvable (bool), difficulty_rating (1-10 int), "
+            "estimated_min_moves (int). Use exactly " + str(nc) + " distinct colours, each "
+            "appearing exactly " + str(BOTTLE_HEIGHT) + " times. Difficulty: " + difficulty_clean
+            + ". Theme: " + theme_clean + ". Return ONLY the JSON, no prose."
+        )
+
+        def _gen() -> str:
+            return gl.nondet.exec_prompt(prompt)
+
+        raw = gl.eq_principle.prompt_comparative(
+            _gen,
+            "Both responses must describe puzzles with the same colour multiset, same "
+            "number of bottles, the same solvable flag, and difficulty_rating within 2 of "
+            "each other.",
+        )
+
+        data = _loads(raw.strip().strip("`"), {})
+        if data == {}:
+            raise Exception("LLM did not return valid JSON")
+
+        layout = data.get("layout", [])
+        if not bool(data.get("solvable", False)):
+            raise Exception("LLM marked the generated puzzle as unsolvable")
+
+        bottles = _copy_bottles(layout)
+        _validate_bottles(bottles)
+
+        puzzle = {
+            "puzzle_id": puzzle_id,
+            "layout": bottles,
+            "difficulty": difficulty_clean,
+            "seed": "llm",
+            "level": 0,
+            "theme": theme_clean,
+            "ai_generated": True,
+            "ai_difficulty_rating": int(data.get("difficulty_rating", 5)),
+            "ai_min_moves": int(data.get("estimated_min_moves", 0)),
+        }
+        self._set_puzzle(puzzle_id, puzzle)
+        self.puzzle_count = self.puzzle_count + u256(1)
+
+        return {"ok": True, "puzzle_id": puzzle_id, "puzzle": puzzle}
+
+    @gl.public.write
+    def get_hint(self, puzzle_id: str) -> dict:
+        """
+        Feature 3: LLM suggests the next-best legal pour. Validators must agree
+        the suggested move is legal under the current session state.
+        """
+        address = str(gl.message.sender_address)
+        session = self._get_session(address, puzzle_id)
+        if session == {}:
+            raise Exception("Puzzle session not started")
+
+        bottles = _copy_bottles(session.get("current_state", []))
+
+        prompt = (
+            "You are solving a water-sort puzzle. Bottle height is " + str(BOTTLE_HEIGHT) + ". "
+            "Current state (each bottle is bottom-to-top): " + _dumps(bottles) + ". "
+            "Reply with ONLY a JSON object {\"from\": <int>, \"to\": <int>} for the next "
+            "best legal pour. A pour is legal if the source is non-empty, the target is "
+            "not full, and either the target is empty or its top colour matches the "
+            "source top colour."
+        )
+
+        def _hint() -> str:
+            return gl.nondet.exec_prompt(prompt)
+
+        raw = gl.eq_principle.prompt_comparative(
+            _hint,
+            "Both responses must propose the same (from, to) pour, and that pour must be "
+            "legal for the given bottle state.",
+        )
+
+        move = _loads(raw.strip().strip("`"), {})
+        from_idx = int(move.get("from", -1))
+        to_idx = int(move.get("to", -1))
+
+        if from_idx < 0 or from_idx >= len(bottles) or to_idx < 0 or to_idx >= len(bottles):
+            raise Exception("Hint produced out-of-range bottle indices")
+        if from_idx == to_idx or not _can_pour(bottles[from_idx], bottles[to_idx]):
+            raise Exception("Hint produced an illegal pour")
+
+        return {"ok": True, "from_bottle": from_idx, "to_bottle": to_idx}
+
+    @gl.public.write
+    def start_daily_challenge(self, date_url: str) -> dict:
+        """
+        Feature 4: Daily challenge seeded from an external web source so every
+        player worldwide gets the same puzzle without a trusted admin push.
+        Validators fetch the URL via gl.nondet.web and must agree on the seed.
+        """
+        def _fetch() -> str:
+            return gl.nondet.web.render(date_url, mode="text")
+
+        page = gl.eq_principle.prompt_comparative(
+            _fetch,
+            "Both fetched bodies must contain the same date string (YYYY-MM-DD).",
+        )
+
+        # Extract first YYYY-MM-DD-looking token deterministically.
+        date_str = ""
+        for i in range(len(page) - 9):
+            chunk = page[i:i + 10]
+            if (
+                len(chunk) == 10
+                and chunk[4] == "-" and chunk[7] == "-"
+                and chunk[:4].isdigit() and chunk[5:7].isdigit() and chunk[8:10].isdigit()
+            ):
+                date_str = chunk
+                break
+        if date_str == "":
+            raise Exception("Could not extract a date from the web source")
+
+        puzzle_id = "daily-" + date_str
+        if self.puzzles.get(puzzle_id, "") != "":
+            return {"ok": True, "puzzle_id": puzzle_id, "existed": True}
+
+        # Generate the daily puzzle via LLM (reuses Feature 1).
+        return self.generate_puzzle(puzzle_id=puzzle_id, difficulty="medium", theme="daily", num_colours=4)
 
     # ─────────────────────────────────────────────────────────────────────
     # Puzzle retrieval
